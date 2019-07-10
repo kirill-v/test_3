@@ -51,7 +51,24 @@ bool Filter::processROI(const cv::Mat& in_roi, cv::Mat& out_roi) {
   cv::meanStdDev(in_roi, mean, stddev);
   std::cout << "Mean: " << mean.size() << mean << ", stddev: " << stddev.size()
 		  << stddev << std::endl;
-//  cv::imshow("roi", in_roi);
-//  cv::waitKey(0);
+
+  int channels[] = {0, 1, 2};
+  const int bins = 128;
+  float range[] = { 0, 256 };
+  const float* histRange = { range };
+  std::vector<cv::Mat> hist(in_roi.channels());
+  bool uniform = true, accumulate = false;
+  for (int channel = 0; channel < in_roi.channels(); ++channel) {
+      cv::calcHist(&in_roi, 1, &channel, cv::Mat(),
+                   hist[channel], 1, &bins, &histRange,
+                   uniform, accumulate);
+      cv::Mat temp;
+      cv::transpose(hist[channel], temp);
+      std::cout << "Hist: " << hist[channel].size() << temp << std::endl;
+  }
+
+  std::cout << "ROI: " << in_roi.size() << in_roi << std::endl;
+  cv::imshow("roi", in_roi);
+  cv::waitKey(0);
   return true;
 }
