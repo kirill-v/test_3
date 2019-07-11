@@ -5,7 +5,7 @@
 #include <opencv2/opencv.hpp>
 
 int main(int argc, char** argv) {
-  std::cout << "Hello world!\n";
+//  TODO: Add help
 
   cv::Mat input = cv::imread(argv[1]);
   if (input.empty()) {

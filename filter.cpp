@@ -1,3 +1,4 @@
+#include "chi2inv.h"
 #include "filter.h"
 
 #include <cmath>
@@ -19,39 +20,39 @@ int roundUp(int value, unsigned int factor) {
   return temp - temp % factor;
 }
 
-template <typename T1, typename T2>
-void calcNormalProbability(std::vector<T1>& hist, const T2 mean, const T2 stddev,
-		const int min, const int max, const int bins) {
-	hist.resize(bins);
-	using FType = double;
-	FType left, right, left_value, right_value;
-	FType factor = 1/stddev/std::sqrt(2);
-	FType bin_size = FType(max-min)/bins;
-	FType offset = -0.5;  // Used to center intervals around integer values
-	left = min + offset;
-	left_value = 0.5 * std::erf((left-mean)*factor);
-	for (int i = 0; i < bins; ++i) {
-		right = left + bin_size;
-		right_value = 0.5 * std::erf((right-mean)*factor);
-		hist[i] = right_value - left_value;
-		left = right;
-		left_value = right_value;
-	}
-}
+//template <typename T1, typename T2>
+//void calcNormalHist(std::vector<T1>& hist, const T2 mean, const T2 stddev,
+//		const int min, const int max, const int bins, const int N) {
+//	hist.resize(bins);
+//	using FType = double;
+//	FType left, right, left_value, right_value;
+//	FType factor = 1/stddev/std::sqrt(2);
+//	FType bin_size = FType(max-min)/bins;
+//    FType offset = -0.5;  // Used to center intervals around integer values
+//    auto normalized_erf = [&factor, &mean, &N](FType x) {
+//        return 0.5 * N * std::erf((x-mean)*factor);
+//	};
+
+//    left = min + offset;
+//    left_value = normalized_erf(left);
+//	for (int i = 0; i < bins; ++i) {
+//		right = left + bin_size;
+//        right_value = normalized_erf(right);
+//		hist[i] = right_value - left_value;
+//		left = right;
+//		left_value = right_value;
+//	}
+//}
 
 template <typename T1, typename T2>
-T1 calcPearsonsStatistic(const std::vector<T1>& probability, cv::Mat& hist,
-		const int N) {
+T1 calcPearsonsStatistic(const std::vector<T1>& probability, cv::Mat& hist) {
+    // TODO: Check sizes
 	T1 s = 0;
 	const T1 eps = 0.001;
     auto&& it = hist.begin<T2>();
-	T1 frequency;
-    std::cout << "Frequency: [";
 	for (const auto& p: probability) {
-		if (p > eps) {
-			frequency = T1(*it)/N;
-            std::cout << frequency << " ";
-			s += (p - frequency)*(p - frequency)/p;
+        if (p > eps) {
+            s += std::pow(T1(*it) - p, 2)/p;
 		}
 		++it;
 	}
@@ -61,7 +62,30 @@ T1 calcPearsonsStatistic(const std::vector<T1>& probability, cv::Mat& hist,
 
 Filter::Filter(unsigned int window_size) : window_size_(window_size) {}
 
+void testChi2Inv() {
+    std::vector<double> alpha {0.95, 0.90, 0.80, 0.70, 0.50, 0.30,
+                               0.20, 0.10, 0.05, 0.01, 0.001};
+    for (int i = 1; i <= 10; ++i) {
+        std::cout << "Degree: " << i << std::endl;
+        for (const auto& a: alpha) {
+            std::cout << chi2inv(1-a, i) << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+Filter::Filter(const unsigned int window_size, const FType alpha,
+               const unsigned int bins): bins_(bins), window_size_(window_size) {
+    // TODO: Check parameters
+    // We need function values for degrees of freedom less than 'bins-2'
+    chi2inv_table_.resize(bins);
+    for (int d = 0; d < bins; ++d) {
+        chi2inv_table_[d] = chi2inv(1-alpha, d);
+    }
+}
+
 bool Filter::Process(const cv::Mat& input, cv::Mat& output) {
+  testChi2Inv();
   int right = roundUp(input.cols, window_size_) - input.cols;
   int bottom = roundUp(input.rows, window_size_) - input.rows;
   std::cout << "Right: " << right << ", bottom: " << bottom << std::endl;
@@ -97,33 +121,59 @@ bool Filter::Process(const cv::Mat& input, cv::Mat& output) {
   return true;
 }
 
+
+void Filter::calcNormalHist(std::vector<FType> &hist,
+                            const FType mean, const FType stddev)
+{
+    hist.resize(bins);
+    using FType = double;
+    FType left, right, left_value, right_value;
+    FType bin_size = FType(kHigh_- kLow_)/bins_;
+    FType offset = -0.5;  // Used to center intervals around integer values
+    FType factor = 1/stddev/std::sqrt(2);
+
+    auto cumulative_frequency = [&factor, &mean, &N](FType x) {
+        return 0.5 * window_size_ * window_size_ * std::erf((x-mean)*factor);
+    };
+
+    left = kLow_ + offset;
+    left_value = cumulative_frequency(left);
+    for (int i = 0; i < bins_; ++i) {
+        right = left + bin_size;
+        right_value = cumulative_frequency(right);
+        hist[i] = right_value - left_value;
+        left = right;
+        left_value = right_value;
+    }
+}
+
 bool Filter::processROI(const cv::Mat& in_roi, cv::Mat& out_roi) {
-//  auto mean = cv::mean(in_roi);
   cv::Mat mean, stddev;
   cv::meanStdDev(in_roi, mean, stddev);
-  std::cout << "Mean: " << mean.size() << mean << ", stddev: " << stddev.size()
-		  << stddev << std::endl;
+  std::cout << "Mean: " << mean.type() << mean.size() << mean << ", stddev: "
+            << stddev.type () << stddev.size() << stddev << std::endl;
 
-  const int bins = 128;
   std::vector<float> normal_hist;
-//  int channels[] = {0, 1, 2};
-  float range[] = {0, 256};
+  const int low = 0;
+  const int high = 256;
+  float range[] = {low, high};
   const float* histRange = { range };
   std::vector<cv::Mat> hist(in_roi.channels());
   bool uniform = true, accumulate = false;
+  const auto N = window_size_ * window_size_;
   for (int channel = 0; channel < in_roi.channels(); ++channel) {
       cv::calcHist(&in_roi, 1, &channel, cv::Mat(),
-                   hist[channel], 1, &bins, &histRange,
+                   hist[channel], 1, &bins_, &histRange,
                    uniform, accumulate);
       cv::Mat temp;
       cv::transpose(hist[channel], temp);
-      std::cout << "Hist: " << hist[channel].size() << temp.type() << temp << std::endl;
+      std::cout << "Hist: " << hist[channel].size() << temp.type()
+                << temp << std::endl;
 
-      calcNormalProbability(normal_hist, mean.at<double>(channel),
-    		  stddev.at<double>(channel),
-    		  range[0], range[1], bins);
+      calcNormalHist(normal_hist, mean.at<double>(channel),
+                     stddev.at<double>(channel), low, high, bins_, N);
       printVector(normal_hist);
-      calcPearsonsStatistic<float, float>(normal_hist, hist[channel], window_size_ * window_size_);
+      calcPearsonsStatistic<float, float>(normal_hist, hist[channel]);
   }
 
 
@@ -132,3 +182,5 @@ bool Filter::processROI(const cv::Mat& in_roi, cv::Mat& out_roi) {
   cv::waitKey(0);
   return true;
 }
+
+
