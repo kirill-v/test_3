@@ -13,14 +13,17 @@ class Filter {
  private:
   void calcNormalHist(std::vector<FType>& hist, const FType mean, const FType stddev);
   bool processROI(const cv::Mat& in_roi, cv::Mat& out_roi);
+  template <typename T>
+  bool testStatistic(const cv::Mat& hist, const FType mean, const FType stddev);
 
   // Brightness range. The upper boundary is exclusive.
   static constexpr int kLow_ = 0;
   static constexpr int kHigh_ = 256;
+  static const cv::Scalar kSmoothColor;
 
-  constexpr unsigned int bins_;
+  const unsigned int bins_;
   std::vector<FType> chi2inv_table_;
-  constexpr unsigned int window_size_;
+  const unsigned int window_size_;
 };
 
 #endif  // FILTER_H_

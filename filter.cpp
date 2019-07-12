@@ -20,48 +20,6 @@ int roundUp(int value, unsigned int factor) {
   return temp - temp % factor;
 }
 
-//template <typename T1, typename T2>
-//void calcNormalHist(std::vector<T1>& hist, const T2 mean, const T2 stddev,
-//		const int min, const int max, const int bins, const int N) {
-//	hist.resize(bins);
-//	using FType = double;
-//	FType left, right, left_value, right_value;
-//	FType factor = 1/stddev/std::sqrt(2);
-//	FType bin_size = FType(max-min)/bins;
-//    FType offset = -0.5;  // Used to center intervals around integer values
-//    auto normalized_erf = [&factor, &mean, &N](FType x) {
-//        return 0.5 * N * std::erf((x-mean)*factor);
-//	};
-
-//    left = min + offset;
-//    left_value = normalized_erf(left);
-//	for (int i = 0; i < bins; ++i) {
-//		right = left + bin_size;
-//        right_value = normalized_erf(right);
-//		hist[i] = right_value - left_value;
-//		left = right;
-//		left_value = right_value;
-//	}
-//}
-
-template <typename T1, typename T2>
-T1 calcPearsonsStatistic(const std::vector<T1>& probability, cv::Mat& hist) {
-    // TODO: Check sizes
-	T1 s = 0;
-	const T1 eps = 0.001;
-    auto&& it = hist.begin<T2>();
-	for (const auto& p: probability) {
-        if (p > eps) {
-            s += std::pow(T1(*it) - p, 2)/p;
-		}
-		++it;
-	}
-    std::cout << "]\n";
-	return s;
-}
-
-Filter::Filter(unsigned int window_size) : window_size_(window_size) {}
-
 void testChi2Inv() {
     std::vector<double> alpha {0.95, 0.90, 0.80, 0.70, 0.50, 0.30,
                                0.20, 0.10, 0.05, 0.01, 0.001};
@@ -73,6 +31,8 @@ void testChi2Inv() {
         std::cout << std::endl;
     }
 }
+
+const cv::Scalar Filter::kSmoothColor = cv::Scalar(128, 128, 128);
 
 Filter::Filter(const unsigned int window_size, const FType alpha,
                const unsigned int bins): bins_(bins), window_size_(window_size) {
@@ -92,14 +52,14 @@ bool Filter::Process(const cv::Mat& input, cv::Mat& output) {
   cv::Mat input_extended{};
   cv::copyMakeBorder(input, input_extended, 0, bottom, 0, right,
                      cv::BORDER_REFLECT_101);
-  std::cout << "Extended: " << input_extended.size << std::endl;
+  std::cout << "Extended: " << input_extended.channels()
+            << ", " <<input_extended.size << std::endl;
   //  cv::imshow("Filter::Process", input_extended);
   //  cv::waitKey(0);
 
   cv::Mat roi, out_roi;
-  auto output_type = CV_8U;
-  cv::Mat output_extended(input_extended.size(),
-                     CV_MAKETYPE(output_type, input.channels()));
+  cv::Mat output_extended;
+  input_extended.copyTo(output_extended);
   cv::Rect roi_rectangle{0, 0, int(window_size_), int(window_size_)};
   for (int i = 0; i <= (input_extended.rows - window_size_);
        i += window_size_) {
@@ -117,7 +77,7 @@ bool Filter::Process(const cv::Mat& input, cv::Mat& output) {
       //          out_roi.adjustROI(0, 0, -window_size_, window_size_);
     }
   }
-  output = input_extended;
+  output = output_extended(cv::Rect{0, 0, input.cols, input.rows});
   return true;
 }
 
@@ -125,15 +85,15 @@ bool Filter::Process(const cv::Mat& input, cv::Mat& output) {
 void Filter::calcNormalHist(std::vector<FType> &hist,
                             const FType mean, const FType stddev)
 {
-    hist.resize(bins);
+    hist.resize(bins_);
     using FType = double;
     FType left, right, left_value, right_value;
     FType bin_size = FType(kHigh_- kLow_)/bins_;
     FType offset = -0.5;  // Used to center intervals around integer values
     FType factor = 1/stddev/std::sqrt(2);
 
-    auto cumulative_frequency = [&factor, &mean, &N](FType x) {
-        return 0.5 * window_size_ * window_size_ * std::erf((x-mean)*factor);
+    auto cumulative_frequency = [&factor, &mean, this](FType x) {
+        return 0.5 * std::pow(this->window_size_, 2) * std::erf((x-mean)*factor);
     };
 
     left = kLow_ + offset;
@@ -150,37 +110,65 @@ void Filter::calcNormalHist(std::vector<FType> &hist,
 bool Filter::processROI(const cv::Mat& in_roi, cv::Mat& out_roi) {
   cv::Mat mean, stddev;
   cv::meanStdDev(in_roi, mean, stddev);
-  std::cout << "Mean: " << mean.type() << mean.size() << mean << ", stddev: "
-            << stddev.type () << stddev.size() << stddev << std::endl;
+//  std::cout << "Mean: " << mean.type() << mean.size() << mean << ", stddev: "
+//            << stddev.type () << stddev.size() << stddev << std::endl;
 
-  std::vector<float> normal_hist;
-  const int low = 0;
-  const int high = 256;
-  float range[] = {low, high};
-  const float* histRange = { range };
+  float range[] = {kLow_, kHigh_};
+  const int hist_size[] = {int(bins_)};
+  const float* hist_range = { range };
   std::vector<cv::Mat> hist(in_roi.channels());
   bool uniform = true, accumulate = false;
-  const auto N = window_size_ * window_size_;
+  bool is_smooth = true;
   for (int channel = 0; channel < in_roi.channels(); ++channel) {
       cv::calcHist(&in_roi, 1, &channel, cv::Mat(),
-                   hist[channel], 1, &bins_, &histRange,
+                   hist[channel], 1, hist_size, &hist_range,
                    uniform, accumulate);
       cv::Mat temp;
       cv::transpose(hist[channel], temp);
-      std::cout << "Hist: " << hist[channel].size() << temp.type()
-                << temp << std::endl;
+//      std::cout << "Hist: " << hist[channel].size() << temp.type()
+//                << temp << std::endl;
 
-      calcNormalHist(normal_hist, mean.at<double>(channel),
-                     stddev.at<double>(channel), low, high, bins_, N);
-      printVector(normal_hist);
-      calcPearsonsStatistic<float, float>(normal_hist, hist[channel]);
+      is_smooth = is_smooth && testStatistic<float>(hist[channel],
+                                                    FType(mean.at<double>(channel)),
+                                                    FType(stddev.at<double>(channel)));
   }
 
-
-  std::cout << "ROI: " << in_roi.size() << in_roi << std::endl;
-  cv::imshow("roi", in_roi);
-  cv::waitKey(0);
+  if (is_smooth) {
+      out_roi = kSmoothColor;
+  }
+//  std::cout << "ROI: " << in_roi.size() << in_roi << std::endl;
+//  cv::imshow("roi", in_roi);
+//  cv::waitKey(0);
   return true;
 }
 
+template<typename T>
+bool Filter::testStatistic(const cv::Mat &hist, const FType mean,
+                           const FType stddev) {
+    std::vector<FType> normal_hist;
+    calcNormalHist(normal_hist, mean, stddev);
+//    printVector(normal_hist);
 
+    FType s = 0;
+    const FType eps = 0.001;
+    auto&& it = hist.begin<T>();
+    int counter = 0;
+    for (const auto& p: normal_hist) {
+        if (p > eps) {
+            s += std::pow(FType(*it) - p, 2)/p;
+            ++counter;
+        }
+        ++it;
+    }
+
+    constexpr int degree_offset = 3; // See task description
+    if (counter >= degree_offset) {
+        auto threshold = chi2inv_table_[counter - degree_offset];
+//        std::cout << "Statistic: " << s << ", threshold: " << threshold
+//                  << ", counter: " << counter << std::endl;
+        return s < threshold;
+    } else {
+        std::cout << "Warning: not enough information for estimation.\n";
+        return false;
+    }
+}
