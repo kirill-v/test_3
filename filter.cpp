@@ -30,7 +30,14 @@ template <typename FType>
 Filter<FType>::Filter(const unsigned int window_size, const FType alpha,
                       const unsigned int bins, ThreadPool& pool)
     : bins_(bins), window_size_(window_size), thread_pool_(pool) {
-  // TODO: Check parameters
+  if (alpha <= 0 || alpha >= 1) {
+    throw std::out_of_range("alpha must belong to the interval (0, 1)\n");
+  }
+  if (!(bins == 32 || bins == 64 || bins == 128)) {
+    throw std::invalid_argument(
+        "Number of the bins must be from the set "
+        "{32, 64, 128}\n");
+  }
 
   // We need function values for degrees of freedom less than 'bins-2'
   chi2inv_table_.resize(bins);

@@ -36,21 +36,24 @@ int main(int argc, char** argv) {
     parser.printMessage();
     return -1;
   }
+  try {
+    cv::Mat input = cv::imread(input_name, cv::IMREAD_UNCHANGED);
+    if (input.empty()) {
+      std::cerr << "Failed to load image from file: " << input_name << "\n";
+      return -1;
+    }
 
-  cv::Mat input = cv::imread(input_name, cv::IMREAD_UNCHANGED);
-  if (input.empty()) {
-    std::cerr << "Failed to load image from file: " << input_name << "\n";
-    return -1;
+    ThreadPool pool{std::thread::hardware_concurrency()};
+    Filter<float> filter(window_size, alpha, bins, pool);
+    cv::Mat output;
+    filter.Process(input, output);
+
+    cv::imshow("input", input);
+    cv::imshow("output", output);
+    cv::waitKey(0);
+  } catch (const std::exception& e) {
+    std::cout << e.what();
   }
-
-  ThreadPool pool{std::thread::hardware_concurrency()};
-  Filter<float> filter(window_size, alpha, bins, pool);
-  cv::Mat output;
-  filter.Process(input, output);
-
-  cv::imshow("input", input);
-  cv::imshow("output", output);
-  cv::waitKey(0);
 
   return 0;
 }
