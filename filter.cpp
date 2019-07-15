@@ -1,5 +1,5 @@
-#include "chi2inv.h"
 #include "filter.h"
+#include "chi2inv.h"
 
 #include <opencv2/opencv.hpp>
 
@@ -28,8 +28,8 @@ const cv::Scalar Filter<FType>::kSmoothColor = cv::Scalar(128, 128, 128);
 
 template <typename FType>
 Filter<FType>::Filter(const unsigned int window_size, const FType alpha,
-                      const unsigned int bins)
-    : bins_(bins), window_size_(window_size) {
+                      const unsigned int bins, ThreadPool& pool)
+    : bins_(bins), window_size_(window_size), thread_pool_(pool) {
   // TODO: Check parameters
 
   // We need function values for degrees of freedom less than 'bins-2'
@@ -38,6 +38,12 @@ Filter<FType>::Filter(const unsigned int window_size, const FType alpha,
     chi2inv_table_[d] = chi2inv(1 - alpha, d);
   }
 }
+
+struct ROIDescriptor {
+  ROIDescriptor(cv::Mat& i, cv::Mat& o) : in(i), out(o) {}
+  cv::Mat in, out;
+};
+
 template <typename FType>
 bool Filter<FType>::Process(const cv::Mat& input, cv::Mat& output) {
   int right = roundUp(input.cols, window_size_) - input.cols;
@@ -54,17 +60,23 @@ bool Filter<FType>::Process(const cv::Mat& input, cv::Mat& output) {
   for (int i = 0; i <= (input_extended.rows - window_size_);
        i += window_size_) {
     roi_rectangle.y = i;
+
     for (int j = 0; j <= (input_extended.cols - window_size_);
          j += window_size_) {
       roi_rectangle.x = j;
       in_roi = input_extended(roi_rectangle);
       out_roi = output_extended(roi_rectangle);
-      if (!processROI(in_roi, out_roi)) {
-        std::cout << "Failed to process roi\n";
-        return false;
-      }
+
+      auto descriptor = std::make_shared<ROIDescriptor>(in_roi, out_roi);
+      thread_pool_.RunTask([descriptor, this]() {
+        if (!processROI(descriptor->in, descriptor->out)) {
+          std::cout << "Failed to process roi\n";
+        }
+      });
     }
   }
+
+  thread_pool_.Join();
   output = output_extended(cv::Rect{0, 0, input.cols, input.rows});
   return true;
 }
@@ -154,7 +166,8 @@ bool Filter<FType>::testStatistic(const cv::Mat& hist, const FType mean,
 
     return s < threshold;
   } else {
-    std::cout << "Warning: not enough information for estimation.\n";
+    std::cout << "Warning: not enough information for estimation. "
+                 "Try another parameters combination.\n";
     return false;
   }
 }

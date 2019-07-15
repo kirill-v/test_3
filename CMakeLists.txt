@@ -4,8 +4,8 @@ project(FilterTest)
 find_package(OpenCV REQUIRED )
 include_directories(${OpenCV_INCLUDE_DIRS} )
 
-set(SOURCE main.cpp filter.cpp chi2inv.cpp)
+set(SOURCE main.cpp filter.cpp chi2inv.cpp thread_pool.cpp)
 
 add_executable(filter-test ${SOURCE})
 target_compile_options(filter-test PUBLIC --std=c++14 -g)
-target_link_libraries(filter-test ${OpenCV_LIBS} )
+target_link_libraries(filter-test ${OpenCV_LIBS} -lpthread)

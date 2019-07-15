@@ -1,3 +1,6 @@
+// Implementation is copied from https://github.com/MRPT/mrpt
+// https://github.com/MRPT/mrpt/blob/498f78eee2f78afdf450a506f03c536fcdd3e32c/libs/math/src/math.cpp#L43
+
 #include <algorithm>
 #include <cmath>
 

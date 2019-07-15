@@ -1,4 +1,5 @@
 #include "filter.h"
+#include "thread_pool.h"
 
 #include <iostream>
 #include <string>
@@ -11,7 +12,7 @@ int main(int argc, char** argv) {
       "{@image   |<none>| input image                                }"
       "{size     |  11  | size of processing window                  }"
       "{alpha    | 0.05 | significance level from interval(0,1). "
-      "Try pass (1-alpha) if result looks strange.}"
+      "Try pass (1-alpha) if result looks strange.                   }"
       "{bins     |  64  | number of bins in a histogram: 32, 64, 128 }";
 
   cv::CommandLineParser parser(argc, argv, keys);
@@ -42,7 +43,8 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  Filter<float> filter(window_size, alpha, bins);
+  ThreadPool pool{std::thread::hardware_concurrency()};
+  Filter<float> filter(window_size, alpha, bins, pool);
   cv::Mat output;
   filter.Process(input, output);
 

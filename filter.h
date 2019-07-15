@@ -1,13 +1,15 @@
 #ifndef FILTER_H_
 #define FILTER_H_
 
+#include "thread_pool.h"
+
 #include <opencv2/opencv.hpp>
 
 template <typename FType>
 class Filter {
  public:
   Filter(const unsigned int window_size, const FType alpha,
-         const unsigned int bins);
+         const unsigned int bins, ThreadPool& pool);
   bool Process(const cv::Mat& in, cv::Mat& out);
 
  private:
@@ -25,6 +27,7 @@ class Filter {
   const unsigned int bins_;
   std::vector<FType> chi2inv_table_;
   const unsigned int window_size_;
+  ThreadPool& thread_pool_;
 };
 
 #endif  // FILTER_H_
