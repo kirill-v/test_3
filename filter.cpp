@@ -46,11 +46,6 @@ Filter<FType>::Filter(const unsigned int window_size, const FType alpha,
   }
 }
 
-struct ROIDescriptor {
-  ROIDescriptor(cv::Mat& i, cv::Mat& o) : in(i), out(o) {}
-  cv::Mat in, out;
-};
-
 template <typename FType>
 bool Filter<FType>::Process(const cv::Mat& input, cv::Mat& output) {
   int right = roundUp(input.cols, window_size_) - input.cols;
@@ -74,9 +69,10 @@ bool Filter<FType>::Process(const cv::Mat& input, cv::Mat& output) {
       in_roi = input_extended(roi_rectangle);
       out_roi = output_extended(roi_rectangle);
 
-      auto descriptor = std::make_shared<ROIDescriptor>(in_roi, out_roi);
-      thread_pool_.RunTask([descriptor, this]() {
-        if (!processROI(descriptor->in, descriptor->out)) {
+      auto args =
+          std::make_shared<std::pair<cv::Mat, cv::Mat>>(in_roi, out_roi);
+      thread_pool_.RunTask([args, this]() {
+        if (!processROI(args->first, args->second)) {
           std::cout << "Failed to process roi\n";
         }
       });
